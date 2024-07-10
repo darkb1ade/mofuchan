@@ -1,0 +1,7 @@
+name: base
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip=24
+  - jupyterlab=3.4.8
