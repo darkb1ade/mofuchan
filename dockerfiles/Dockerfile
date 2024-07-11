@@ -30,6 +30,9 @@ ENV LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=UTC
 
 # install conda environment
 ADD conda-linux-64.lock /tmp/conda-linux-64.lock
+RUN conda update -n base -c defaults conda \
+    && conda update --all \
+    && conda clean -afy
 RUN conda install --freeze-installed --name base --file /tmp/conda-linux-64.lock \
         && conda clean -afy
 
