@@ -44,3 +44,21 @@ The structure of the source code
 ├── Makefile  
 └── README.md
 ```
+
+
+
+## Pre-commit
+
+To automatically format please use pre-commit.
+
+1. Install pre-commit
+
+```commandline
+pip install pre-commit
+```
+
+2. Install git hook scripts
+
+```commandline
+pre-commit install
+```
