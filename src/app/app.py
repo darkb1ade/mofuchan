@@ -32,7 +32,14 @@ def main():
     title_text = "Mofu-chan Financial Assistant"
     description_text = "Let us know your investment preference"
 
-    with gr.Blocks(theme=theme) as demo:
+    # Custom CSS for chatbot background
+    custom_css = """
+    .chatbot-container {
+        background-color: #f0f8ff; /* Light blue color */
+    }
+    """
+
+    with gr.Blocks(theme=theme, css=custom_css) as demo:
         gr.Markdown(f"<h1 style='text-align: center;'>{title_text}</h1>")
         gr.Markdown(f"<p style='text-align: left;'>{description_text}</p>")
 
@@ -49,6 +56,7 @@ def main():
                             "Hi, Can you tell me what kind of investment do you like?",
                         ]
                     ],
+                    elem_classes="chatbot-container",
                 )
         with gr.Row():
             user_input = gr.Textbox(
