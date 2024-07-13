@@ -11,12 +11,13 @@ python = "^3.12"
 langchain = "^0.2.7"
 skfolio = "^0.3.1"
 xgboost = "^2.1.0"
-gradio = "^4.37.2"
+gradio = "4.38.1"
 matplotlib = "^3.9.1"
 scikit-learn = "^1.5.1"
 optuna = "^3.6.1"
 lightgbm = "^4.4.0"
 openai = "^1.35.13"
+seaborn = "^0.13.2"
 
 
 [build-system]
