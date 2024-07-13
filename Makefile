@@ -1,7 +1,7 @@
 MAKEFILE_PATH := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 PROJECT_ROOT := $(abspath $(MAKEFILE_PATH)/)
 PROJECT_NAME=mofuchan
-IMAGE_TAG=test
+IMAGE_TAG=v0.1
 HOST_JUPYTER_PORT=8888
 DOCKER_ADDOPTS=\
 	-v $(PROJECT_ROOT)/notebook:/workdir/notebook \
