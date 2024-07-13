@@ -23,13 +23,10 @@ run-notebook::
 
 run-notebook::
 	@echo "########################################"
-	@echo "########################################"
-	@echo "##"
-	@echo "##  If you run this container locally:"
-	@echo "##            access jupyter at:"
-	@echo "##        http://localhost:$(HOST_JUPYTER_PORT)"
-	@echo "##"
-	@echo "########################################"
+	@echo ""
+	@echo "Access"
+	@echo "http://localhost:$(HOST_JUPYTER_PORT)"
+	@echo ""
 	@echo "########################################"
 
 # remove the container
