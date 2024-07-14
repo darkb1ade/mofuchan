@@ -2,6 +2,8 @@ import time
 import gradio as gr
 import gradio.themes as themes
 
+from constant.text import *
+
 
 def temporary_api(input_message):
     output_message = "User said: " + input_message
@@ -23,14 +25,11 @@ def bot(history):
 
 
 def reset_chat():
-    return [[None, "Hi, Can you tell me what kind of investment do you like?"]]
+    return [[None, MOFU_CHAN_INIT_PHRASE]]
 
 
 def main():
     theme = themes.Default()
-
-    title_text = "Mofu-chan Financial Assistant"
-    description_text = "Let us know your investment preference"
 
     # Custom CSS for chatbot background
     custom_css = """
@@ -38,35 +37,31 @@ def main():
         background-color: #f0f8ff; /* Light blue color */
     }
     """
+    logo_path = "src/app/assets/mofu_logo.png"
 
     with gr.Blocks(theme=theme, css=custom_css) as demo:
-        gr.Markdown(f"<h1 style='text-align: center;'>{title_text}</h1>")
-        gr.Markdown(f"<p style='text-align: left;'>{description_text}</p>")
+        gr.Markdown(f"<h1 style='text-align: center;'>{MOFU_CHAN_HEADER}</h1>")
+        gr.Markdown(f"<p style='text-align: left;'>{MOFU_CHAN_DESCRIPTION}</p>")
 
         with gr.Row():
             with gr.Column(scale=1):
-                gr.Image(value="src/assets/mofu_logo.png", width=300, show_label=False)
+                gr.Image(value=logo_path, width=300, show_label=False)
             with gr.Column(scale=10):
                 chatbot = gr.Chatbot(
                     height=400,
                     show_label=False,
-                    value=[
-                        [
-                            None,
-                            "Hi, Can you tell me what kind of investment do you like?",
-                        ]
-                    ],
+                    value=reset_chat(),
                     elem_classes="chatbot-container",
                 )
         with gr.Row():
             user_input = gr.Textbox(
-                placeholder="Reply to Mofu-chan...",
+                placeholder=MOFU_CHAN_TEXTBOX_PLACEHOLDER,
                 label="",
                 container=True,
                 scale=7,
                 interactive=True,
             )
-            submit_btn = gr.Button("Submit", variant="primary")
+            submit_btn = gr.Button("Send", variant="primary")
 
         submit_click = submit_btn.click(
             user,
