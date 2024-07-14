@@ -72,7 +72,8 @@ def train():
     for file in files:
         df = pd.read_csv(file, index_col=0, header=[0, 1])
         df.index = pd.to_datetime(df.index)
-        data[file.split("/")[-1].split(".")[0]] = df
+        asset_group = os.path.splitext(os.path.basename(file))[0]
+        data[asset_group] = df
     predictor.train(data)
 
 
@@ -95,7 +96,8 @@ def predict():
     for file in files:
         df = pd.read_csv(file, index_col=0, header=[0, 1])
         df.index = pd.to_datetime(df.index)
-        data[file.split("/")[-1].split(".")[0]] = df.loc["2023":]
+        asset_group = os.path.splitext(os.path.basename(file))[0]
+        data[asset_group] = df.loc["2023":]
     result = predictor.predict(data=data, model_path=model_path)
     result.to_csv(
         f"{PATHOUT}/predictions_{result.index[0].strftime('%Y%m%d')}_{result.index[-1].strftime('%Y%m%d')}.csv"
