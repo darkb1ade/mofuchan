@@ -23,7 +23,7 @@ RUN apt update \
     gettext-base \
     # clean
     && apt clean \
-    && rm -rf /var/lib/apt/lists/* 
+    && rm -rf /var/lib/apt/lists/*
 
 
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=UTC
@@ -42,7 +42,7 @@ RUN pip install poetry \
     && poetry config virtualenvs.in-project true \
     && poetry config virtualenvs.path /opt/conda/envs \
     && poetry config virtualenvs.create false
-RUN poetry install --no-interaction --no-ansi -vvv 
+RUN poetry install --no-interaction --no-ansi -vvv
 
 
 SHELL ["/bin/bash", "-c"]
@@ -57,6 +57,6 @@ ADD .jupyter /root/.jupyter
 
 ENV PATH /opt/conda/envs:$PATH
 
-# ENV PYTHONPATH $PYTHONPATH:/workdir/src:/workdir
+ENV PYTHONPATH $PYTHONPATH:/workdir/src:/workdir
 
 # WORKDIR /workdir
