@@ -1,7 +1,14 @@
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
-from features import return_, vol, daily_return, moving_average, intra_day, prices_range
+from .features import (
+    return_,
+    vol,
+    daily_return,
+    moving_average,
+    intra_day,
+    prices_range,
+)
 import optuna
 import xgboost as xgb
 from sklearn.metrics import mean_squared_error
@@ -63,16 +70,15 @@ class Feature:
 
 class DatasetSpliter:
     def __init__(
-        self, train_start: str, test_start: str, offset: int, use_scaler: bool = True
+        self, train_start: str = None, test_start: str = "2024", offset: int = 1
     ):
         self.train_start = train_start
         self.test_start = test_start
         self.offset = offset
-        self.use_scaler = use_scaler
         self.feature_scaler = None
         self.label_scaler = None
 
-    def transform(self, df: pd.DataFrame, feature_columns: list, label_columns: list):
+    def transform(self, df: pd.DataFrame):
         test_start_idx = df.index.get_loc(self.test_start).start
         if self.train_start is None:
             train = df.iloc[: test_start_idx - self.offset]
@@ -81,28 +87,11 @@ class DatasetSpliter:
             train = df.iloc[train_start_idx : test_start_idx - self.offset]
         test = df.iloc[test_start_idx:]
 
-        if self.use_scaler is True:
-            self.feature_scaler = StandardScaler()
-            train_x = self.feature_scaler.fit_transform(train[feature_columns])
-            test_x = self.feature_scaler.transform(test[feature_columns])
-            train_x = pd.DataFrame(
-                train_x, index=train.index, columns=[feature_columns]
-            )
-            test_x = pd.DataFrame(test_x, index=test.index, columns=[feature_columns])
-
-            self.label_scaler = StandardScaler()
-            train_y = self.label_scaler.fit_transform(train[label_columns])
-            test_y = self.label_scaler.transform(test[label_columns])
-            train_y = pd.DataFrame(train_y, index=train.index, columns=[label_columns])
-            test_y = pd.DataFrame(test_y, index=test.index, columns=[label_columns])
-        else:
-            train_x, train_y = train[feature_columns], train[label_columns]
-            test_x, test_y = test[feature_columns], test[label_columns]
-        return train_x, train_y, test_x, test_y
+        return train, test
 
 
 class Tuner:
-    def __init__(self, offset: int, n_trial: int = 100, valid_ratio: float = 0.2):
+    def __init__(self, offset: int = 1, n_trial: int = 100, valid_ratio: float = 0.2):
         self.n_trial = n_trial
         self.offset = offset
         self.valid_ratio = valid_ratio
@@ -173,11 +162,30 @@ class Tuner:
 
 class GroupModel:
     def __init__(self):
+        self._init_model()
+        self._init_feature_scaler()
+        self._init_label_scaler()
+
+    def _init_model(self):
         self.bond = {}
         self.commodity = {}
         self.currency = {}
         self.real_estate = {}
         self.equity = {}
+
+    def _init_label_scaler(self):
+        self.label_scaler_bond = {}
+        self.label_scaler_commodity = {}
+        self.label_scaler_currency = {}
+        self.label_scaler_real_estate = {}
+        self.label_scaler_equity = {}
+
+    def _init_feature_scaler(self):
+        self.feature_scaler_bond = {}
+        self.feature_scaler_commodity = {}
+        self.feature_scaler_currency = {}
+        self.feature_scaler_real_estate = {}
+        self.feature_scaler_equity = {}
 
     def set_model(self, model, asset_group: str, asset: str, overwrite: bool = True):
         assert hasattr(self, asset_group), "Wrong asset group name"
@@ -190,8 +198,33 @@ class GroupModel:
         else:
             getattr(self, asset_group)[asset] = model
 
-    def predict(self):
-        ...
+    def set_label_scaler(
+        self, label_scaler, asset_group: str, asset: str, overwrite: bool = True
+    ):
+        attr_name = f"label_scaler_{asset_group}"
+        assert hasattr(self, attr_name), "Wrong asset group name"
+
+        if asset in getattr(self, attr_name):
+            if overwrite is True:
+                getattr(self, attr_name)[asset] = label_scaler
+            else:
+                print(f"Label Scaler for {asset} already exists")
+        else:
+            getattr(self, attr_name)[asset] = label_scaler
+
+    def set_feature_scaler(
+        self, feature_scaler, asset_group: str, asset: str, overwrite: bool = True
+    ):
+        attr_name = f"feature_scaler_{asset_group}"
+        assert hasattr(self, attr_name), "Wrong asset group name"
+
+        if asset in getattr(self, attr_name):
+            if overwrite is True:
+                getattr(self, attr_name)[asset] = feature_scaler
+            else:
+                print(f"Label Scaler for {asset} already exists")
+        else:
+            getattr(self, attr_name)[asset] = feature_scaler
 
 
 class Predictor:
@@ -200,9 +233,10 @@ class Predictor:
         pathOut: str,
         preproc_config: dict,
         feature_config: dict,
-        dataset_spliter_config: dict,
-        tuner_config: dict,
+        tuner_config: dict = {},
+        dataset_spliter_config: dict = {},
         model_path: str = None,
+        use_scaler: bool = True,
     ):
         self.preprocessor = Preprocessor(**preproc_config)
         self.feature = Feature(**feature_config)
@@ -212,49 +246,92 @@ class Predictor:
         self.label_col = []
         self.pathOut = pathOut
         self.model_path = model_path
+        self.use_scaler = use_scaler
         self._init_model()
 
     def _init_model(self, **kwargs):
         if self.model_path is None:
             self.model = GroupModel()
 
-    def train(self, df: pd.DataFrame, asset_group: str):
+    def train(self, data: dict[pd.DataFrame]):
+        for asset_group, df in data.items():
+            self._train_single_group(df=df, asset_group=asset_group)
+        self.save_model()
+
+    def _norm_data(self, train: pd.DataFrame, test: pd.DataFrame):
+        feature_scaler = StandardScaler()
+        train_x = feature_scaler.fit_transform(train[self.feature_col])
+        test_x = feature_scaler.transform(test[self.feature_col])
+        train_x = pd.DataFrame(train_x, index=train.index, columns=[self.feature_col])
+        test_x = pd.DataFrame(test_x, index=test.index, columns=[self.feature_col])
+
+        label_scaler = StandardScaler()
+        train_y = label_scaler.fit_transform(train[self.label_col])
+        test_y = label_scaler.transform(test[self.label_col])
+        train_y = pd.DataFrame(train_y, index=train.index, columns=[self.label_col])
+        test_y = pd.DataFrame(test_y, index=test.index, columns=[self.label_col])
+        return feature_scaler, label_scaler, train_x, train_y, test_x, test_y
+
+    def _train_single_group(self, df: pd.DataFrame, asset_group: str):
         df_clean = self.preprocessor.transform(df)
         assets = df_clean.columns.get_level_values(0).unique()
 
-        asset = assets[0]
-        # TODO: for each asset
-        for asset in assets[:2]:
+        # for each asset
+        for asset in assets:
             x, y = self.feature.transform(df_clean.xs(asset, axis=1))
             self.feature_col = x.columns
             self.label_col = y.columns
             data = pd.concat([x, y], axis=1)
             data = data.dropna().replace([np.inf, -np.inf], 0)
 
-            train_x, train_y, test_x, test_y = self.dataset_spliter.transform(
-                df=data, feature_columns=self.feature_col, label_columns=self.label_col
-            )
+            train, test = self.dataset_spliter.transform(df=data)
+            if self.use_scaler is True:
+                (
+                    feature_scaler,
+                    label_scaler,
+                    train_x,
+                    train_y,
+                    test_x,
+                    test_y,
+                ) = self._norm_data(train=train, test=test)
+            else:
+                feature_scaler, label_scaler = None, None
+                train_x, train_y = train[self.feature_col], train[self.label_col]
+                test_x, test_y = test[self.feature_col], test[self.label_col]
+
             best_params = self.tuner.tune(train_x=train_x, train_y=train_y)
             model = xgb.XGBRegressor(**best_params)
             model.fit(train_x, train_y)
+
             # save model
             self.model.set_model(model=model, asset_group=asset_group, asset=asset)
+            self.model.set_label_scaler(
+                label_scaler=label_scaler, asset_group=asset_group, asset=asset
+            )
+            self.model.set_feature_scaler(
+                feature_scaler=feature_scaler, asset_group=asset_group, asset=asset
+            )
             self.visualize_result(
                 model=model,
                 asset_title=f"{asset_group}-{asset}",
                 test_x=test_x,
                 test_y=test_y,
+                label_scaler=label_scaler,
             )
-        print("done")
 
     def visualize_result(
-        self, model, asset_title: str, test_x: pd.DataFrame, test_y: pd.DataFrame
+        self,
+        label_scaler,
+        model,
+        asset_title: str,
+        test_x: pd.DataFrame,
+        test_y: pd.DataFrame,
     ):
         # 1. Create prediction result
         pred = model.predict(test_x)
-        y_true = self.dataset_spliter.label_scaler.inverse_transform(test_y).reshape(-1)
+        y_true = label_scaler.inverse_transform(test_y).reshape(-1)
         y_true = pd.DataFrame(y_true, index=test_y.index, columns=["y_true"])
-        y_pred = self.dataset_spliter.label_scaler.inverse_transform(
+        y_pred = label_scaler.inverse_transform(
             pd.DataFrame(pred, index=test_y.index, columns=["y_pred"])
         ).reshape(-1)
         y_pred = pd.DataFrame(y_pred, index=test_y.index, columns=["y_pred"])
@@ -301,7 +378,7 @@ class Predictor:
         plt.savefig(f"{self.pathOut}/{asset_title}_predicted_result.jpg")
 
     def _conf_matrix(self, con_matrix: np.ndarray, asset_title: str):
-        fig = plt.figure(figsize=(10, 10))
+        _ = plt.figure(figsize=(10, 10))
         sns.heatmap(
             con_matrix,
             annot=True,
@@ -333,86 +410,43 @@ class Predictor:
         with open(f"{self.pathOut}/groupmodel.pkl", "wb") as f:
             pickle.dump(self.model, f)
 
-    def predict(self, df: pd.DataFrame):
-        return self.preprocessor.transform(df)
+    def load_model(self, model_path: str):
+        with open(model_path, "rb") as f:
+            self.model = pickle.load(f)
 
+    def predict(self, data: dict[pd.DataFrame], model_path: str):
+        self.load_model(model_path=model_path)
+        predictions = {}
+        for asset_group, df in data.items():
+            prediction = self._predict_single_group(df=df, asset_group=asset_group)
+            predictions[asset_group] = prediction
+        return pd.concat(predictions, axis=1)
 
-def _train(df: pd.DataFrame, asset_group: str):
-    preproc_config = {"freq": "d", "remove_weekend": True}
+    def _predict_single_group(self, df: pd.DataFrame, asset_group: str):
+        # 1. clean data
+        df_clean = self.preprocessor.transform(df)
+        assets = df_clean.columns.get_level_values(0).unique()
 
-    feature_config = {
-        "return": {
-            "columns": ["Close", "High", "Low", "Open", "Volume"],
-            "window_size_list": [5, 21, 42, 63],
-            "smoother_win": 5,
-        },
-        "volatility": {
-            "columns": ["Close", "High", "Low", "Open", "Volume"],
-            "window_size_list": [5, 21, 42, 63],
-        },
-        "ma": {
-            "columns": ["Close", "High", "Low", "Open", "Volume"],
-            "window_size_list": [5, 21],
-        },
-        "daily_return": {
-            "columns": ["Close", "High", "Low", "Open", "Volume"],
-            "window_size_list": [5, 21],
-        },
-        "range": {
-            "smoother_win": 5,
-        },
-        "intra_day": {
-            "smoother_win": 5,
-        },
-    }
-    dataset_spliter_config = {
-        "train_start": None,
-        "test_start": "2024",
-        "offset": _get_dataset_offset(feature_config),
-        "use_scaler": True,
-    }
-    tuner_config = {
-        "offset": _get_dataset_offset(feature_config),
-        "n_trial": 100,
-        "valid_ratio": 0.2,
-    }
-    predictor = Predictor(
-        pathOut="/workdir/notebook/out",
-        preproc_config=preproc_config,
-        feature_config=feature_config,
-        dataset_spliter_config=dataset_spliter_config,
-        tuner_config=tuner_config,
-    )
-
-    predictor.train(df, asset_group)
-    predictor.save_model()
-
-
-def _get_dataset_offset(feature_config):
-    max_offset = 0
-    for _, config in feature_config.items():
-        offset = 0
-        if "window_size_list" in config:
-            offset += max(config["window_size_list"])
-        if "smoother_win" in config:
-            offset += config["smoother_win"]
-        if offset > max_offset:
-            max_offset = offset
-    return max_offset
-
-
-def train():
-    from glob import glob
-
-    files = glob("/workdir/notebook/data/*.csv")
-    dfs = []
-    # for file in files:
-    #     df = pd.read_csv(file, index_col=0, header=[0, 1])
-    #     df.index = pd.to_datetime(df.index)
-    df = pd.read_csv(files[0], index_col=0, header=[0, 1])
-    df.index = pd.to_datetime(df.index)
-    _train(df, asset_group=files[0].split("/")[-1].split(".")[0])
-
-
-if __name__ == "__main__":
-    train()
+        predictions = []
+        # for each asset
+        for asset in assets:
+            # 2. compute feature
+            x, _ = self.feature.transform(df_clean.xs(asset, axis=1))
+            # 3. get enough data for prediction
+            self.feature_col = x.columns
+            _, x = self.dataset_spliter.transform(df=x)
+            x = (
+                x[self.feature_col].dropna().replace([np.inf, -np.inf], 0)
+            )  # remove rows with nan
+            idx = x.index
+            # 4. predict
+            x = getattr(self.model, f"feature_scaler_{asset_group}")[asset].transform(x)
+            y_pred = getattr(self.model, asset_group)[asset].predict(x)
+            # 5. reverse scaler
+            y_pred = y_pred.reshape(y_pred.shape[0], -1)
+            y_pred = getattr(self.model, f"label_scaler_{asset_group}")[
+                asset
+            ].inverse_transform(y_pred)
+            y_pred = pd.DataFrame(y_pred, index=idx, columns=[asset])
+            predictions.append(y_pred)
+        return pd.concat(predictions, axis=1)
