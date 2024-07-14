@@ -40,9 +40,13 @@ def get_by_session_id(session_id: str) -> BaseChatMessageHistory:
     return store[session_id]
 
 
+class MofuChatBot:
+    def __init__(self):
+        self.llm = ChatOpenAI(temperature=0.7)
+
+
 def create_investment_advisor():
     # 1. Set up the OpenAI language model
-    llm = ChatOpenAI(temperature=0.7)
 
     # 2. Create a custom prompt template
     system_template = """You are an expert in finanicial investment advisor. \
