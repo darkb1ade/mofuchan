@@ -6,14 +6,15 @@ HOST_JUPYTER_PORT=8888
 DOCKER_ADDOPTS=\
 	-v $(PROJECT_ROOT)/notebook:/workdir/notebook \
 	-v $(PROJECT_ROOT)/src:/workdir/src \
+	-v $(PROJECT_ROOT)/script:/workdir/script \
 	--env-file .env \
 	$(OPTS)
 
 conda_lock:
 	conda-lock -f environment.yml -p linux-64 -k explicit --filename-template "conda-{platform}.lock"
-	
+
 build:
-	docker build -t $(PROJECT_NAME):$(IMAGE_TAG) -f $(PROJECT_ROOT)/dockerfiles/Dockerfile $(PROJECT_ROOT) 
+	docker build -t $(PROJECT_NAME):$(IMAGE_TAG) -f $(PROJECT_ROOT)/dockerfiles/Dockerfile $(PROJECT_ROOT)
 
 run-bash:
 	docker run --rm -it $(DOCKER_ADDOPTS) --name mofuchan-bash $(PROJECT_NAME):$(IMAGE_TAG) bash
