@@ -43,16 +43,10 @@ def get_by_session_id(session_id: str) -> BaseChatMessageHistory:
 
 
 class RiskAssessBot:
-    def __init__(self, llm, session_id) -> None:
+    def __init__(self, llm, session_id, risk_level_options) -> None:
         self.llm = llm
         self.session_id = session_id
-        self.expected_output = [
-            "aggressive",
-            "moderate-aggressive",
-            "moderate",
-            "moderate-conservative",
-            "conservative",
-        ]
+        self.risk_level_options = risk_level_options
 
         chat_prompt = ChatPromptTemplate.from_messages(
             [
@@ -125,7 +119,7 @@ class RiskAssessBot:
 
 
 class GeneralBot:
-    def __init__(self, llm, session_id) -> None:
+    def __init__(self, llm, session_id, risk_level_options) -> None:
         self.llm = llm
         self.session_id = session_id
         chat_prompt = ChatPromptTemplate.from_messages(
@@ -145,6 +139,7 @@ class GeneralBot:
             input_messages_key="input",
             history_messages_key="chat_history",
         )
+        self.risk_level_options = risk_level_options
 
     def get_history(self):
         print(self.conversation.get_session_history(session_id=self.session_id))
@@ -165,6 +160,94 @@ class GeneralBot:
                 "destination": "general_chat",
                 "response": router_output.content,
             }
+
+        # Mofu-chan want to move to asset allocation model but not finalize risk level.
+        if (
+            response["destination"] == "asset_allocation"
+            and response["response"] not in self.risk_level_options
+        ):
+            new_response = self(
+                f"Instruction: please specify user risk level with one exactly one of followings: {self.risk_level_options}. \
+                                If you don't have enough info, return destination: general_chat and response with question to ask user for their investment risk level instead DONT ASSUME ANSWER."
+            )
+            print(f"Unexpected asset_allocation: {new_response}")
+            if new_response["response"] not in self.risk_level_options:
+                response = {
+                    "destination": "general_chat",
+                    "response": new_response["response"],
+                }
+            else:
+                response["response"] = new_response["response"]
+
+        return response
+
+
+class AssetAllocateBot:
+    def __init__(self, llm, session_id, default_allocation):
+        self.llm = llm
+        self.session_id = session_id
+        self.default_allocation = default_allocation
+        chat_prompt = ChatPromptTemplate.from_messages(
+            [
+                SystemMessagePromptTemplate.from_template(ALLOCATE_PROMPT_TEMPLATE),
+                MessagesPlaceholder(variable_name="chat_history"),
+                HumanMessagePromptTemplate.from_template("{input}"),
+            ]
+        )
+
+        self.chain = chat_prompt | self.llm
+        self.conversation = RunnableWithMessageHistory(
+            self.chain,
+            # Uses the get_by_session_id function defined in the example
+            # above.
+            get_by_session_id,
+            input_messages_key="input",
+            history_messages_key="chat_history",
+        )
+
+        self.asset_name = ["income_assets", "commodities", "currencies", "equities"]
+
+        self.risk_assess_level = None
+        self.asset_allocation = None
+
+    def get_history(self):
+        print(self.conversation.get_session_history(session_id=self.session_id))
+
+    def init_conversation(self, risk_assess_level):
+        self.risk_assess_level = risk_assess_level
+        self.asset_allocation = "\n".join(
+            [
+                f"- {name} : {value*100}%"
+                for name, value in zip(
+                    self.asset_name, self.default_allocation[risk_assess_level]
+                )
+            ]
+        )
+        print(f"Asset alllocation: {self.asset_allocation}")
+        return self(
+            "Instruction: Send message asking if given asset allocation is acceptable and open for adjustment."
+        )
+
+    def __call__(self, user_input):
+        router_output = self.conversation.invoke(
+            {
+                "input": user_input,
+                "risk_assess_level": self.risk_assess_level,
+                "asset_allocation": self.asset_allocation,
+            },
+            config={"configurable": {"session_id": self.session_id}},
+        )
+        try:
+            response = json.loads(router_output.content)
+        except json.JSONDecodeError:
+            # Placeholder
+            print(
+                f"WARNING: Invalid decoding to dict from output text: {router_output.content}"
+            )
+            response = {
+                "destination": "general_chat",
+                "response": router_output.content,
+            }
         return response
 
 
@@ -172,17 +255,32 @@ class MofuChatBot:
     def __init__(self) -> None:
         self.llm = ChatOpenAI(temperature=0.7)
         self.session_id = 0
+        self.default_allocation = {
+            "conservative": [0.7, 0.05, 0.05, 0.2],
+            "moderate-conservative": [0.6, 0.05, 0.05, 0.3],
+            "moderate": [0.5, 0.1, 0.05, 0.35],
+            "moderate-aggressive": [0.3, 0.1, 0.05, 0.55],
+            "aggressive": [0.1, 0.1, 0.05, 0.75],
+        }
         self.reset()
 
     def reset(self):
         for k in store:
             store[k].clear()
         self.conversations = {
-            "general_chat": GeneralBot(self.llm, f"general-{self.session_id}"),
-            "risk_assessment": RiskAssessBot(
-                self.llm, f"risk-assessment-{self.session_id}"
+            "general_chat": GeneralBot(
+                self.llm,
+                f"general-{self.session_id}",
+                list(self.default_allocation.keys()),
             ),
-            "asset_allocation": None,
+            "risk_assessment": RiskAssessBot(
+                self.llm,
+                f"risk-assessment-{self.session_id}",
+                list(self.default_allocation.keys()),
+            ),
+            "asset_allocation": AssetAllocateBot(
+                self.llm, f"asset-allo-{self.session_id}", self.default_allocation
+            ),
         }
         self.mode = "general_chat"
         self.current_conversation = self.conversations["general_chat"]
@@ -206,12 +304,28 @@ class MofuChatBot:
                 output_init = self.current_conversation(None)
 
                 return output["response"] + "\n" + output_init["response"]
-
-            return output["response"]
+            elif output["destination"].lower() == "asset_allocation":
+                self.set_status("asset_allocation")
+                output_init = self.current_conversation.init_conversation(
+                    output["response"]
+                )
+                return output["response"] + "\n" + output_init["response"]
+            else:
+                return output["response"]
         elif self.mode == "risk_assessment":
             if output["destination"] == "result":
+                self.set_status("asset_allocation")
+                output_init = self.current_conversation.init_conversation(
+                    output["response"]
+                )
+                return output["response"] + "\n" + output_init["response"]
+            else:
+                return output["response"]
+        elif self.mode == "asset_allocation":
+            if output["destination"] == "result":
                 self.set_status("general_chat")
-
-            return output["response"]
+                return f"Final output is: {output['response']}"
+            else:
+                return output["response"]
         else:
             raise NotImplementedError()
