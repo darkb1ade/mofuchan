@@ -30,10 +30,11 @@ def bot(history, api_func):
         yield history
 
 
-def reset_chat(mofu_bot):
-    mofu_bot.reset()
-    initial_question = mofu_bot.chat(None)
-    return [[None, MOFU_CHAN_INIT_PHRASE], [None, initial_question]]
+# Somehow I need one object from gradio here as argument.
+def reset_chat(button_obj, chatbot):
+    chatbot.reset()
+    # initial_question = mofu_bot.chat(None)
+    return [[None, MOFU_CHAN_INIT_PHRASE]]
 
 
 def main():
@@ -62,7 +63,7 @@ def main():
                 chatbot = gr.Chatbot(
                     height=400,
                     show_label=False,
-                    value=reset_chat(mofu_bot),
+                    value=reset_chat(None, mofu_bot),
                     elem_classes="chatbot-container",
                 )
         with gr.Row():
@@ -90,11 +91,13 @@ def main():
 
         reset_btn = gr.Button("Reset")
         mofu_input = gr.Textbox(visible=False, value=mofu_bot)
-        reset_btn.click(fn=reset_chat, inputs=mofu_input, outputs=chatbot)
+        reset_btn.click(
+            fn=partial(reset_chat, chatbot=mofu_bot), inputs=mofu_input, outputs=chatbot
+        )
 
         debug_btn = gr.Button("DEBUG")
         debug_btn.click(
-            fn=lambda: print(mofu_bot.current_conversation.get_history()),
+            fn=mofu_bot.current_conversation.get_history,
             inputs=None,
             outputs=None,
         )
