@@ -87,7 +87,7 @@ def main():
 
         debug_btn = gr.Button("DEBUG")
         debug_btn.click(
-            fn=mofu_bot.current_conversation.get_history,
+            fn=mofu_bot.current_bot.get_history,
             inputs=None,
             outputs=None,
         )

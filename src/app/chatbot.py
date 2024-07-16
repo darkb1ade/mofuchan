@@ -33,13 +33,13 @@ class InMemoryHistory(BaseChatMessageHistory, BaseModel):
 
 # Here we use a global variable to store the chat message history.
 # This will make it easier to inspect it to see the underlying results.
-store = {}
+HISTORY_STORE = {}
 
 
 def get_by_session_id(session_id: str) -> BaseChatMessageHistory:
-    if session_id not in store:
-        store[session_id] = InMemoryHistory()
-    return store[session_id]
+    if session_id not in HISTORY_STORE:
+        HISTORY_STORE[session_id] = InMemoryHistory()
+    return HISTORY_STORE[session_id]
 
 
 class RiskAssessBot:
@@ -175,9 +175,9 @@ class MofuChatBot:
         self.reset()
 
     def reset(self):
-        for k in store:
-            store[k].clear()
-        self.conversations = {
+        for k in HISTORY_STORE:
+            HISTORY_STORE[k].clear()
+        self.bots = {
             "general_chat": GeneralBot(self.llm, f"general-{self.session_id}"),
             "risk_assessment": RiskAssessBot(
                 self.llm, f"risk-assessment-{self.session_id}"
@@ -185,25 +185,27 @@ class MofuChatBot:
             "asset_allocation": None,
         }
         self.mode = "general_chat"
-        self.current_conversation = self.conversations["general_chat"]
+        self.current_bot = self.bots["general_chat"]
 
     def set_status(self, mode: str):
         """
         Mode: ["general_chat", "risk_assessment", "asset_allocation"]
         """
-        if mode in self.conversations:
-            self.current_conversation = self.conversations[mode]
+        if mode in self.bots:
+            self.current_bot = self.bots[mode]
             self.mode = mode
             print(f"MofuBot switch to {self.mode}")
         else:
-            raise ValueError(f"Unknown mode: {mode}. Expected: {self.conversations}")
+            raise ValueError(
+                f"Unknown mode: {mode}. Expected: {(',').join(list(self.converstions.keys()))}"
+            )
 
     def chat(self, user_input: str):
-        output = self.current_conversation(user_input)
+        output = self.current_bot(user_input)
         if self.mode == "general_chat":
             if output["destination"].lower() == "risk_assessment":
                 self.set_status("risk_assessment")
-                output_init = self.current_conversation(None)
+                output_init = self.current_bot(None)
 
                 return output["response"] + "\n" + output_init["response"]
 
