@@ -189,7 +189,7 @@ class AssetAllocateBot:
         self.default_allocation = default_allocation
         chat_prompt = ChatPromptTemplate.from_messages(
             [
-                SystemMessagePromptTemplate.from_template(ALLOCATE_PROMPT_TEMPLATE),
+                SystemMessagePromptTemplate.from_template(PROFILE_PROMPT_TEMPLATE),
                 MessagesPlaceholder(variable_name="chat_history"),
                 HumanMessagePromptTemplate.from_template("{input}"),
             ]
@@ -208,14 +208,14 @@ class AssetAllocateBot:
         self.asset_name = ["income_assets", "commodities", "currencies", "equities"]
 
         self.risk_assess_level = None
-        self.asset_allocation = None
+        self.profile_value = None
 
     def get_history(self):
         print(self.conversation.get_session_history(session_id=self.session_id))
 
     def init_conversation(self, risk_assess_level):
         self.risk_assess_level = risk_assess_level
-        self.asset_allocation = "\n".join(
+        self.profile_value = "\n".join(
             [
                 f"- {name} : {value*100}%"
                 for name, value in zip(
@@ -223,7 +223,7 @@ class AssetAllocateBot:
                 )
             ]
         )
-        print(f"Asset alllocation: {self.asset_allocation}")
+        print(f"Asset alllocation: {self.profile_value}")
         return self(
             "Instruction: Send message asking if given asset allocation is acceptable and open for adjustment."
         )
@@ -233,7 +233,7 @@ class AssetAllocateBot:
             {
                 "input": user_input,
                 "risk_assess_level": self.risk_assess_level,
-                "asset_allocation": self.asset_allocation,
+                "profile": self.profile_value,
             },
             config={"configurable": {"session_id": self.session_id}},
         )
@@ -245,9 +245,21 @@ class AssetAllocateBot:
                 f"WARNING: Invalid decoding to dict from output text: {router_output.content}"
             )
             response = {
-                "destination": "general_chat",
+                "destination": "discussion",
                 "response": router_output.content,
             }
+
+        # Handle error
+        if response["destination"] == "result":
+            confirm_response = self.conversation.invoke(
+                {
+                    "input": f"Instruction: Confirm the final profile value exactly in the given format: {self.risk_assess_level}",
+                    "risk_assess_level": self.risk_assess_level,
+                    "profile": self.profile_value,
+                }
+            )
+            response["result"] = confirm_response["result"]
+
         return response
 
 
@@ -255,7 +267,7 @@ class MofuChatBot:
     def __init__(self) -> None:
         self.llm = ChatOpenAI(temperature=0.7)
         self.session_id = 0
-        self.default_allocation = {
+        self.default_profile = {
             "conservative": [0.7, 0.05, 0.05, 0.2],
             "moderate-conservative": [0.6, 0.05, 0.05, 0.3],
             "moderate": [0.5, 0.1, 0.05, 0.35],
@@ -271,15 +283,15 @@ class MofuChatBot:
             "general_chat": GeneralBot(
                 self.llm,
                 f"general-{self.session_id}",
-                list(self.default_allocation.keys()),
+                list(self.default_profile.keys()),
             ),
             "risk_assessment": RiskAssessBot(
                 self.llm,
                 f"risk-assessment-{self.session_id}",
-                list(self.default_allocation.keys()),
+                list(self.default_profile.keys()),
             ),
             "asset_allocation": AssetAllocateBot(
-                self.llm, f"asset-allo-{self.session_id}", self.default_allocation
+                self.llm, f"asset-allo-{self.session_id}", self.default_profile
             ),
         }
         self.mode = "general_chat"
