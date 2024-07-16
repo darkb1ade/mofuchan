@@ -36,7 +36,7 @@ class Preprocessor:  # TODO: discard non-business day
 
 
 class Feature:
-    def __init__(self, lookahead: int = 1, **feature_config):
+    def __init__(self, label_lookahead: int = 1, **feature_config):
         self.feature_funcs = {
             "return": return_,
             "volatility": vol,
@@ -49,7 +49,7 @@ class Feature:
             self.feature_funcs.keys()
         ), f"Feature config key not to match with function. Found:{(',').join(feature_config.keys())}. Expected:{(',').join(self.feature_funcs.keys())}"
         self.__dict__.update(feature_config)
-        self.lookahead = lookahead
+        self.label_lookahead = label_lookahead
 
     def transform(self, df: pd.DataFrame):
         features = []
@@ -62,8 +62,8 @@ class Feature:
         x = pd.concat(features, axis=1).replace([np.inf, -np.inf], 0)
         y = (
             df[["Close"]]
-            .shift(-1 * self.lookahead)
-            .rename(columns={"Close": f"fwd_return({self.lookahead})"})
+            .shift(-1 * self.label_lookahead)
+            .rename(columns={"Close": f"fwd_return({self.label_lookahead})"})
         )
         return x, y
 
@@ -79,6 +79,9 @@ class DatasetSpliter:
         self.label_scaler = None
 
     def transform(self, df: pd.DataFrame):
+        if self.test_start is None:  # not split
+            return df, df
+
         test_start_idx = df.index.get_loc(self.test_start).start
         if self.train_start is None:
             train = df.iloc[: test_start_idx - self.offset]
@@ -230,7 +233,7 @@ class GroupModel:
 class Predictor:
     def __init__(
         self,
-        pathOut: str,
+        path_out: str,
         preproc_config: dict,
         feature_config: dict,
         tuner_config: dict = {},
@@ -244,7 +247,7 @@ class Predictor:
         self.tuner = Tuner(**tuner_config)
         self.feature_col = []
         self.label_col = []
-        self.pathOut = pathOut
+        self.path_out = path_out
         self.model_path = model_path
         self.use_scaler = use_scaler
         self._init_model()
@@ -356,13 +359,13 @@ class Predictor:
         scores = self._conf_score(con_matrix=con_matrix)
         scores.update({"MSE": mean_squared_error(test_y, pred)})
         score_df = pd.DataFrame(scores, index=["score"])
-        score_df.to_csv(f"{self.pathOut}/{asset_title}_score.csv")
+        score_df.to_csv(f"{self.path_out}/{asset_title}_score.csv")
 
     def _feature_important(self, model, asset_title: str):
         _, axis = plt.subplots(1, 1, figsize=(15, 15))
         plot_importance(model, ax=axis)
         plt.tight_layout()
-        plt.savefig(f"{self.pathOut}/{asset_title}_feature_important.jpg")
+        plt.savefig(f"{self.path_out}/{asset_title}_feature_important.jpg")
 
     def _time_series_result(self, result: pd.DataFrame, asset_title: str):
         _, axis = plt.subplots(2, 1, figsize=(15, 7))
@@ -375,7 +378,7 @@ class Predictor:
         axis[1].set_ylabel("Forward Return")
 
         plt.tight_layout()
-        plt.savefig(f"{self.pathOut}/{asset_title}_predicted_result.jpg")
+        plt.savefig(f"{self.path_out}/{asset_title}_predicted_result.jpg")
 
     def _conf_matrix(self, con_matrix: np.ndarray, asset_title: str):
         _ = plt.figure(figsize=(10, 10))
@@ -391,7 +394,7 @@ class Predictor:
         plt.xlabel("Prediction")
         plt.title("Signal")
         plt.tight_layout()
-        plt.savefig(f"{self.pathOut}/{asset_title}_conf_matrix.jpg")
+        plt.savefig(f"{self.path_out}/{asset_title}_conf_matrix.jpg")
 
     def _conf_score(self, con_matrix: np.ndarray):
         tn, fp, fn, tp = con_matrix.ravel()
@@ -407,7 +410,7 @@ class Predictor:
         }
 
     def save_model(self):
-        with open(f"{self.pathOut}/groupmodel.pkl", "wb") as f:
+        with open(f"{self.path_out}/groupmodel.pkl", "wb") as f:
             pickle.dump(self.model, f)
 
     def load_model(self, model_path: str):

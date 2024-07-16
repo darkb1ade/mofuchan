@@ -1,72 +1,27 @@
 import pandas as pd
 from src.core.predictor import Predictor
+from src.core.config import Config
+from src.core.utils import get_dataset_offset
 from glob import glob
 import os
+import yaml
 
+with open("./script/config.yaml", "r") as file:
+    config = yaml.safe_load(file)
 
-def _get_dataset_offset(feature_config):
-    max_offset = 0
-    for _, config in feature_config.items():
-        offset = 0
-        if "window_size_list" in config:
-            offset += max(config["window_size_list"])
-        if "smoother_win" in config:
-            offset += config["smoother_win"]
-        if offset > max_offset:
-            max_offset = offset
-    return max_offset
-
-
-PATHOUT = "/workdir/notebook/out_final"
-os.makedirs(PATHOUT, exist_ok=True)
-
-PREPROC_CONFIG = {"freq": "d", "remove_weekend": True}
-FEATURE_CONFIG = {
-    "return": {
-        "columns": ["Close", "High", "Low", "Open", "Volume"],
-        "window_size_list": [5, 21, 42, 63],
-        "smoother_win": 5,
-    },
-    "volatility": {
-        "columns": ["Close", "High", "Low", "Open", "Volume"],
-        "window_size_list": [5, 21, 42, 63],
-    },
-    "ma": {
-        "columns": ["Close", "High", "Low", "Open", "Volume"],
-        "window_size_list": [5, 21],
-    },
-    "daily_return": {
-        "columns": ["Close", "High", "Low", "Open", "Volume"],
-        "window_size_list": [5, 21],
-    },
-    "range": {
-        "smoother_win": 5,
-    },
-    "intra_day": {
-        "smoother_win": 5,
-    },
-}
-DATASET_SPLITER_CONFIG = {
-    "train_start": None,
-    "test_start": "2024",
-    "offset": _get_dataset_offset(FEATURE_CONFIG),
-}
-TUNER_CONFIG = {
-    "offset": _get_dataset_offset(FEATURE_CONFIG),
-    "n_trial": 100,
-    "valid_ratio": 0.2,
-}
+conf = Config(**config)
+os.makedirs(conf.path_out, exist_ok=True)
 
 
 def train():
-    files = glob("/workdir/notebook/data/*.csv")
+    files = glob(f"{conf.path_in}/*.csv")
     predictor = Predictor(
-        pathOut=PATHOUT,
-        preproc_config=PREPROC_CONFIG,
-        feature_config=FEATURE_CONFIG,
-        dataset_spliter_config=DATASET_SPLITER_CONFIG,
-        tuner_config=TUNER_CONFIG,
-        use_scaler=True,
+        path_out=conf.path_out,
+        preproc_config=conf.preprocesor,
+        feature_config=conf.feature,
+        dataset_spliter_config=conf.data_spliter,
+        tuner_config=conf.tuner,
+        use_scaler=conf.use_scaler,
     )
     data = {}
     for file in files:
@@ -79,18 +34,18 @@ def train():
 
 def predict():
     start_predict = "2024"
-    files = glob("/workdir/notebook/data/*.csv")
+    files = glob(f"{conf.path_in}/*.csv")
     dataset_spliter_config = {
         "test_start": start_predict,  # date prediction start
-        "offset": _get_dataset_offset(FEATURE_CONFIG),
+        "offset": get_dataset_offset(conf.feature),
     }
     predictor = Predictor(
-        pathOut=PATHOUT,
-        preproc_config=PREPROC_CONFIG,
-        feature_config=FEATURE_CONFIG,
+        path_out=conf.path_out,
+        preproc_config=conf.preprocesor,
+        feature_config=conf.feature,
         dataset_spliter_config=dataset_spliter_config,
     )
-    model_path = f"{PATHOUT}/groupmodel.pkl"
+    model_path = f"{conf.path_out}/groupmodel.pkl"
 
     data = {}
     for file in files:
@@ -100,7 +55,7 @@ def predict():
         data[asset_group] = df.loc["2023":]
     result = predictor.predict(data=data, model_path=model_path)
     result.to_csv(
-        f"{PATHOUT}/predictions_{result.index[0].strftime('%Y%m%d')}_{result.index[-1].strftime('%Y%m%d')}.csv"
+        f"{conf.path_out}/predictions_{result.index[0].strftime('%Y%m%d')}_{result.index[-1].strftime('%Y%m%d')}.csv"
     )
 
 

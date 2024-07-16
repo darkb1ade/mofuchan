@@ -1,0 +1,82 @@
+path_out: "/workdir/notebook/out_lookahead20" #directory to save model
+path_in: "/workdir/notebook/data" #directory of data
+
+preprocesor:
+  freq: "d"
+  remove_weekend: True
+
+feature:
+  label_lookahead: 20 #5day*4week = 1month
+  return:
+    columns: # columns use for computing feature
+      - Close
+      - High
+      - Low
+      - Open
+      - Volume
+    window_size_list: #window size for computing feature
+      - 5
+      - 21
+      - 42
+      - 63
+    smoother_win: 5 #reduce noise
+
+  volatility:
+    columns:
+      - Close
+      - High
+      - Low
+      - Open
+      - Volume
+    window_size_list:
+      - 5
+      - 21
+      - 42
+      - 63
+    smoother_win:
+
+  ma: #moving average
+    columns:
+      - Close
+      - High
+      - Low
+      - Open
+      - Volume
+    window_size_list:
+      - 5
+      - 21
+    smoother_win:
+
+  daily_return:
+    columns:
+      - Close
+      - High
+      - Low
+      - Open
+      - Volume
+    window_size_list:
+      - 5
+      - 21
+    smoother_win:
+
+  range:
+    columns:
+    window_size_list:
+    smoother_win: 5
+
+  intra_day:
+    columns:
+    window_size_list:
+    smoother_win: 5
+
+data_spliter:
+  train_start: #None for using from the begining
+  test_start: "2024"
+  offset: 'auto' #auto compute from feature
+
+tuner:
+  offset: 'auto'
+  n_trial: 100
+  valid_ratio: 0.2
+
+use_scaler: True
