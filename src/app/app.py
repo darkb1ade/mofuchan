@@ -4,17 +4,7 @@ import gradio.themes as themes
 
 from src.app.chatbot import MofuChatBot
 from src.constant.gui_text import *
-import os
 from functools import partial
-
-os.environ[
-    "OPENAI_API_KEY"
-] = "sk-None-YDqFswCyHAKamHOPJXIxT3BlbkFJ60ZrR7F9l79HWe07Fjlr"
-
-# def temporary_api(input_message):
-#     output_message = "User said: " + input_message
-#     time.sleep(5)
-#     return output_message
 
 
 def user(user_message, history):
