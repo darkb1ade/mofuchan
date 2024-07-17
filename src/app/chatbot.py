@@ -105,14 +105,22 @@ class RiskAssessBot:
             prompt = f"User: {user_input}.\n Instruction: Response to what user asked. Follow by asking previous question again."
             self.predict(prompt)
         elif self.bot_response["destination"] == "unrelated":
-            prompt = f"User: {user_input}.\n Instruction: Response gently to what they said, then resume asking last unanswered question."
+            prompt = f"User: {user_input}.\n Instruction: Response politely to what they said, then resume asking last unanswered question."
         elif (
             self.bot_response["destination"] == "result"
         ):  # This only reach if result content is not statisfied.
-            prompt = f"Please rephrase result again. Give exactly one of the following answers:  Aggressive, Moderate-aggressive, Moderate, Moderate-conservative, Conservative. No extra response!! "
+            prompt = f"Instruction: Return user risk level based on their answer. Give exactly one of the following answers:  Aggressive, Moderate-aggressive, Moderate, Moderate-conservative, Conservative. No extra response!! "
             self.predict(prompt)
+
+            if self.bot_response["destination"] == "result":
+                self.bot_response["response"] = self.bot_response["response"].lower()
+                if self.bot_response["response"] not in self.risk_level_options:
+                    # Give one more chance
+                    prompt = f"Instruction: Return user risk level again. Give exactly one of the following answers:  Aggressive, Moderate-aggressive, Moderate, Moderate-conservative, Conservative. No extra response!!"
+                    self.predict(prompt)
+
         else:
-            prompt = f"Please rephrase your previous result again and return destination value with exactly one of followings: 'Question', 'Explanation', 'Result'"
+            prompt = f"Instruction: Please rephrase your previous result again and return destination value with exactly one of followings: 'Question', 'Explanation', 'Result'"
             self.predict(prompt)
 
         return self.bot_response
@@ -161,16 +169,18 @@ class GeneralBot:
                 "response": router_output.content,
             }
 
+        print(f"Debug: General Chat : {response}")
+
         # Mofu-chan want to move to asset allocation model but not finalize risk level.
         if (
-            response["destination"] == "asset_allocation"
+            response["destination"] == "profile"
             and response["response"] not in self.risk_level_options
         ):
             new_response = self(
-                f"Instruction: please specify user risk level with one exactly one of followings: {self.risk_level_options}. \
+                f"Instruction: Specify user risk level with one exactly one of followings: {self.risk_level_options}. \
                                 If you don't have enough info, return destination: general_chat and response with question to ask user for their investment risk level instead DONT ASSUME ANSWER."
             )
-            print(f"Unexpected asset_allocation: {new_response}")
+            print(f"Unexpected profile: {response}")
             if new_response["response"] not in self.risk_level_options:
                 response = {
                     "destination": "general_chat",
@@ -182,7 +192,7 @@ class GeneralBot:
         return response
 
 
-class AssetAllocateBot:
+class ProfileAllocateBot:
     def __init__(self, llm, session_id, default_allocation):
         self.llm = llm
         self.session_id = session_id
@@ -223,40 +233,41 @@ class AssetAllocateBot:
                 )
             ]
         )
-        print(f"Asset alllocation: {self.profile_value}")
+        print(f"Default profile: {self.profile_value}")
         return self(
-            "Instruction: Send message asking if given asset allocation is acceptable and open for adjustment."
+            "Instruction: Send message recommending given profile and ask for adjustment."
         )
 
-    def __call__(self, user_input):
-        router_output = self.conversation.invoke(
+    def predict(self, prompt: str):
+        response = self.conversation.invoke(
             {
-                "input": user_input,
+                "input": prompt,
                 "risk_assess_level": self.risk_assess_level,
                 "profile": self.profile_value,
             },
             config={"configurable": {"session_id": self.session_id}},
         )
         try:
-            response = json.loads(router_output.content)
+            response = json.loads(response.content)
         except json.JSONDecodeError:
             # Placeholder
             print(
-                f"WARNING: Invalid decoding to dict from output text: {router_output.content}"
+                f"WARNING: Invalid decoding to dict from output text: {response.content}"
             )
             response = {
                 "destination": "discussion",
-                "response": router_output.content,
+                "response": response.content,
             }
+        print(f"Debug: Profile allocation : {response}")
+        return response
+
+    def __call__(self, user_input):
+        response = self.predict(user_input)
 
         # Handle error
         if response["destination"] == "result":
-            confirm_response = self.conversation.invoke(
-                {
-                    "input": f"Instruction: Confirm the final profile value exactly in the given format: {self.risk_assess_level}",
-                    "risk_assess_level": self.risk_assess_level,
-                    "profile": self.profile_value,
-                }
+            confirm_response = self.predict(
+                f"Instruction: Confirm the final profile value exactly in the given format: {self.profile_value}"
             )
             response["result"] = confirm_response["result"]
 
@@ -290,7 +301,7 @@ class MofuChatBot:
                 f"risk-assessment-{self.session_id}",
                 list(self.default_profile.keys()),
             ),
-            "asset_allocation": AssetAllocateBot(
+            "profile_allocation": ProfileAllocateBot(
                 self.llm, f"asset-allo-{self.session_id}", self.default_profile
             ),
         }
@@ -299,7 +310,7 @@ class MofuChatBot:
 
     def set_status(self, mode: str):
         """
-        Mode: ["general_chat", "risk_assessment", "asset_allocation"]
+        Mode: ["general_chat", "risk_assessment", "profile_allocation"]
         """
         if mode in self.bots:
             self.current_bot = self.bots[mode]
@@ -318,24 +329,20 @@ class MofuChatBot:
                 output_init = self.current_bot(None)
 
                 return output["response"] + "\n" + output_init["response"]
-            elif output["destination"].lower() == "asset_allocation":
-                self.set_status("asset_allocation")
-                output_init = self.current_conversation.init_conversation(
-                    output["response"]
-                )
-                return output["response"] + "\n" + output_init["response"]
+            elif output["destination"].lower() == "profile":
+                self.set_status("profile_allocation")
+                output_init = self.current_bot.init_conversation(output["response"])
+                return output_init["response"]
             else:
                 return output["response"]
         elif self.mode == "risk_assessment":
             if output["destination"] == "result":
-                self.set_status("asset_allocation")
-                output_init = self.current_conversation.init_conversation(
-                    output["response"]
-                )
+                self.set_status("profile_allocation")
+                output_init = self.current_bot.init_conversation(output["response"])
                 return output["response"] + "\n" + output_init["response"]
             else:
                 return output["response"]
-        elif self.mode == "asset_allocation":
+        elif self.mode == "profile_allocation":
             if output["destination"] == "result":
                 self.set_status("general_chat")
                 return f"Final output is: {output['response']}"
