@@ -9,7 +9,7 @@ class Config:
     path_in: str
 
     # component
-    preprocesor: dict
+    preprocessor: dict
     feature: dict
     data_spliter: dict
     tuner: dict

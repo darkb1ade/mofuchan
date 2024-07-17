@@ -413,12 +413,12 @@ class Predictor:
         with open(f"{self.path_out}/groupmodel.pkl", "wb") as f:
             pickle.dump(self.model, f)
 
-    def load_model(self, model_path: str):
-        with open(model_path, "rb") as f:
+    def load_model(self):
+        with open(self.model_path, "rb") as f:
             self.model = pickle.load(f)
 
-    def predict(self, data: dict[pd.DataFrame], model_path: str):
-        self.load_model(model_path=model_path)
+    def predict(self, data: dict[pd.DataFrame]):
+        self.load_model()
         predictions = {}
         for asset_group, df in data.items():
             prediction = self._predict_single_group(df=df, asset_group=asset_group)

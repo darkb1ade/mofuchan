@@ -17,7 +17,7 @@ def train():
     files = glob(f"{conf.path_in}/*.csv")
     predictor = Predictor(
         path_out=conf.path_out,
-        preproc_config=conf.preprocesor,
+        preproc_config=conf.preprocessor,
         feature_config=conf.feature,
         dataset_spliter_config=conf.data_spliter,
         tuner_config=conf.tuner,
@@ -41,7 +41,7 @@ def predict():
     }
     predictor = Predictor(
         path_out=conf.path_out,
-        preproc_config=conf.preprocesor,
+        preproc_config=conf.preprocessor,
         feature_config=conf.feature,
         dataset_spliter_config=dataset_spliter_config,
     )

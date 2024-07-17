@@ -28,9 +28,7 @@ class XGBPrediction(BasePrior):
         return router
 
     def fit(self, X: npt.ArrayLike, y=None, **fit_params) -> "XGBPrediction":
-        result = self.predictor.predict(
-            data={fit_params["asset_group"]: X}, model_path=fit_params["model_path"]
-        )
+        result = self.predictor.predict(data={fit_params["asset_group"]: X})
         result.index = result.index + pd.Timedelta(days=20 + 4 * 2)  # 4*2 for weekend
 
         # filter prediction
