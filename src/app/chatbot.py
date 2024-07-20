@@ -173,13 +173,13 @@ class GeneralBot:
 
         # Mofu-chan want to move to asset allocation model but not finalize risk level.
         if (
-            response["destination"] == "profile"
+            response["destination"] == "portfolio"
             and response["response"] not in self.risk_level_options
         ):
             new_response = self(
-                f"Instruction: Specify user risk level with one exactly one of followings: {self.risk_level_options}. \
-                                If you don't have enough info, return destination: general_chat and response with question to ask user for their investment risk level instead DONT ASSUME ANSWER."
-            )
+                f"Instruction: Specify user risk level with EXACTLY ONE VALUE from of followings: {self.risk_level_options}.") 
+                                # If you really don't have enough info, return destination: general_chat and response with question to ask user for their investment risk level instead DONT ASSUME ANSWER."
+            # )
             print(f"Unexpected profile: {response}")
             if new_response["response"] not in self.risk_level_options:
                 response = {
@@ -243,7 +243,7 @@ class ProfileAllocateBot:
             {
                 "input": prompt,
                 "risk_assess_level": self.risk_assess_level,
-                "profile": self.profile_value,
+                "portfolio": self.profile_value,
             },
             config={"configurable": {"session_id": self.session_id}},
         )
@@ -261,22 +261,46 @@ class ProfileAllocateBot:
         print(f"Debug: Profile allocation : {response}")
         return response
 
+    def convert_output_to_dict(self, output_string: str):
+        output_value = output_string.replace("\n", "").strip().split("-")
+        if len(output_value)!= 5:
+            print(f"Error: Invalid format for portfolio output: {output_string}")
+            return None
+        
+        output_dict = {}
+        for val in output_value[1:]:
+            if val.count(":") != 1:
+                print(f"Error: Invalid format for portfolio output: {output_string}")
+                return None
+            asset_key, asset_value = val.split(":")[0], val.split(":")[1]
+            try:
+                output_dict[asset_key.strip()] = float(asset_value.replace("%", "").strip()) / 100
+            except ValueError:
+                print(f"Error: Invalid format for portfolio output: {output_string}")
+                return None
+        return output_dict
+
+
     def __call__(self, user_input):
         response = self.predict(user_input)
 
         # Handle error
         if response["destination"] == "result":
-            confirm_response = self.predict(
-                f"Instruction: Confirm the final profile value exactly in the given format: {self.profile_value}"
-            )
-            response["result"] = confirm_response["result"]
+            dict_output = self.convert_output_to_dict(response["response"])
+            if dict_output is None:
+                confirm_response = self.predict(
+                    f"Instruction: Confirm the final profile value exactly in the given format: {self.profile_value}"
+                )
+                dict_output = self.convert_output_to_dict(confirm_response["response"])
+            
+            response["response"] = dict_output
 
         return response
 
 
 class MofuChatBot:
     def __init__(self) -> None:
-        self.llm = ChatOpenAI(temperature=0.7)
+        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
         self.session_id = 0
         self.default_profile = {
             "conservative": [0.7, 0.05, 0.05, 0.2],
@@ -329,7 +353,7 @@ class MofuChatBot:
                 output_init = self.current_bot(None)
 
                 return output["response"] + "\n" + output_init["response"]
-            elif output["destination"].lower() == "profile":
+            elif output["destination"].lower() == "portfolio":
                 self.set_status("profile_allocation")
                 output_init = self.current_bot.init_conversation(output["response"])
                 return output_init["response"]
@@ -345,7 +369,7 @@ class MofuChatBot:
         elif self.mode == "profile_allocation":
             if output["destination"] == "result":
                 self.set_status("general_chat")
-                return f"Final output is: {output['response']}"
+                return output["response"]
             else:
                 return output["response"]
         else:
