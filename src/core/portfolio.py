@@ -1,12 +1,11 @@
 from src.core.predictor import Predictor
-from src.skfolio_lib.optimization import MeanRisk
-from src.skfolio_lib.prior import XGBPrediction
+from skfolio.optimization import MeanRisk
 from skfolio.optimization import ObjectiveFunction
 from skfolio.optimization import RiskBudgeting
 from skfolio import RiskMeasure
-from src.core.utils import get_dataset_offset
 from src.core.simulator import Simulator
 import pandas as pd
+from tqdm import tqdm
 
 OBJECTIVE_FUNCTION = {"max_return": "MAXIMIZE_RETURN"}
 RISKMEASURE = {"variance": "VARIANCE", "cvar": "CVAR"}
@@ -18,8 +17,6 @@ class Portfolio:
         predictor: Predictor,
         asset_min_w: float,
         risk_budget: dict,
-        # rebal_start:str,
-        # rebal_period:str = "m",
         simulator: Simulator,
         group_risk_measure: str = "cvar",
         objective_func: str = "max_return",
@@ -37,6 +34,11 @@ class Portfolio:
             risk_measure=group_risk_measure,
         )
         self.simulator = simulator
+        self.offset = (
+            self.predictor.dataset_spliter.offset  # offset for feature calculation
+            + self.predictor.feature.label_lookahead  # offset for label
+            + 1
+        )
 
     def _set_asset_model(
         self,
@@ -45,14 +47,13 @@ class Portfolio:
         objective_func: str = "max_return",
         risk_measure: str = "variance",
     ):
-        self.prior_model = XGBPrediction(predictor=predictor)
+        self.predictor = predictor
         self.asset_model = MeanRisk(
             objective_function=getattr(
                 ObjectiveFunction, OBJECTIVE_FUNCTION[objective_func]
             ),
             risk_measure=getattr(RiskMeasure, RISKMEASURE[risk_measure]),
             min_weights=min_w,
-            prior_estimator=self.prior_model,
         )
 
     def _set_group_model(self, risk_budget: dict, risk_measure: str):
@@ -63,68 +64,117 @@ class Portfolio:
             portfolio_params=dict(name="Risk Budgeting - CVaR"),
         )
 
-    def backtesting(self, dfs: pd.DataFrame, rebal_dt: list):
-        group_weighted_return = self._optimize_asset(dfs=dfs, rebal_dt=rebal_dt)
-        ports, returns = self._optimize_group_asset(
-            dfs=dfs, group_weight=group_weighted_return, rebal_dt=rebal_dt
+    def optimize(self, preds: pd.DataFrame, rebal_dt: list):
+        # 1. Optimize mean-variance model for each individual asset
+        asset_weights = self._optimize_individual_asset(preds=preds, rebal_dt=rebal_dt)
+        # 2. Optimize risk-budgeting model for each asset group
+        group_weights = self._optimize_group_asset(
+            preds=preds, asset_weights=asset_weights
         )
-        return ports, returns
+        return asset_weights, group_weights
 
-    def _optimize_asset(self, dfs: pd.DataFrame, rebal_dt: list):
-        """
-        dfs (pd.DataFrame): multicolumn (asset group, asset name, OHLC)
-        """
-        offset = (
-            self.prior_model.predictor.dataset_spliter.offset
-            + self.prior_model.predictor.feature.label_lookahead
-            + 1
-        )
+    def predict(self, dfs: pd.DataFrame, rebal_dt: list):
         asset_groups = dfs.columns.get_level_values(0).unique()
-        weighted_returns_all = {}
-        for asset_group in asset_groups:
+        preds = []
+        for asset_group in tqdm(asset_groups, desc="Predicting"):
             data = dfs.xs(asset_group, axis=1)
+            # 1. get the required data amount for prediction
+            start_idx = data.index.get_loc(rebal_dt[0])
+            end_idx = data.index.get_loc(rebal_dt[-1])
+            x = data.iloc[start_idx - self.offset : end_idx + 1]
 
-            weighted_returns = []
-            for dt in rebal_dt:
-                print(f"TODAY: {dt}, predict for next month")
-                idx = data.index.get_loc(dt)
-                x = data.iloc[idx - offset : idx + 1]
-                # fit to get the optimized weight using prediction result in prior
-                self.asset_model.fit(x, asset_group=asset_group)
-                # groundtruth data (future)*optimize weight(for future)
-                weighted_return = (
-                    data.loc[
-                        self.asset_model.prior_estimator_.idx[
-                            0
-                        ] : self.asset_model.prior_estimator_.idx[-1]
-                    ]
-                ).xs("Close", axis=1, level=1).pct_change(
-                    1
-                ).dropna() * self.asset_model.weights_
-                weighted_returns.append(weighted_return)
-                print(
-                    f"result from {self.asset_model.prior_estimator_.idx[0]} ~ {self.asset_model.prior_estimator_.idx[-1]}"
-                )
-            weighted_returns = pd.concat(weighted_returns)
+            # 2. predict the asset close price at lookahead
+            pred = self.predictor.predict(data={asset_group: x})
 
-            weighted_returns_all[asset_group] = weighted_returns
-        weighted_returns_all = pd.concat(weighted_returns_all, axis=1)
-        weighted_returns_all = weighted_returns_all.rename(
+            # 3. shift index to label index
+            if self.predictor.preprocessor.remove_weekend is True:
+                weekend_offset = self.predictor.feature.label_lookahead // 5 * 2
+            else:
+                weekend_offset = 0
+            pred.index = pred.index + pd.Timedelta(
+                days=self.predictor.feature.label_lookahead + weekend_offset
+            )
+
+            # 4. get prediction result
+            pred = pred[rebal_dt[0] :]  # included today
+
+            preds.append(pred)
+        preds = pd.concat(preds, axis=1)
+        return preds
+
+    def _optimize_individual_asset(self, preds: pd.DataFrame, rebal_dt: list):
+        """
+        Optimize portfolio of all asset in the same asset group.
+
+        Args:
+            preds (pd.DataFrame): Dataframe of predicted result. Columns is (assest group, assest name)
+            rebal_dt (list): List of rebalance date.
+
+        Returns:
+            weights (pd.DataFrame): Dataframe of optimized weight for each individual asset. Index is (rebal_dt, pred_start, pred_end) and columns is (assest group, assest name)
+        """
+        # offset for the required data amount to use in prediction
+
+        asset_groups = preds.columns.get_level_values(0).unique()
+        weights = {}
+
+        for asset_group in tqdm(asset_groups, desc="Optimizing"):
+            pred_single_group = preds.xs(asset_group, axis=1)
+            columns = ["rebal_dt", "pred_start", "pred_end"] + list(
+                pred_single_group.columns.get_level_values(0).unique()
+            )
+            rows = []
+            for st_idx, end_idx in zip(rebal_dt[:-1], rebal_dt[1:]):
+                pred = pred_single_group[st_idx:end_idx].iloc[
+                    1:
+                ]  # prediction for date after rebalance date
+                # 1. fit predicted price to get the optimized weights
+                self.asset_model.fit(pred)
+                # 2. collect weight
+                weight = self.asset_model.weights_.copy()
+                row = (st_idx, pred.index[0], pred.index[-1]) + tuple(weight)
+                rows.append(row)
+            # collect weighted return from all rebalancing date
+            weights[asset_group] = pd.DataFrame(rows, columns=columns)
+            weights[asset_group] = weights[asset_group].set_index(
+                ["rebal_dt", "pred_start", "pred_end"]
+            )
+        weights = pd.concat(weights, axis=1)
+        # 7. rename to re-align the assets' group name with expected group from mofu-chan
+        weights = weights.rename(
             columns={"bond": "fix_income", "real_estate": "fix_income"}
         )
-        return weighted_returns_all.dropna().groupby(axis=1, level=0).sum()
+        return weights
 
-    def _optimize_group_asset(
-        self, dfs: pd.DataFrame, group_weight: pd.DataFrame, rebal_dt: list
-    ):
-        dfs = dfs.rename(columns={"bond": "fix_income", "real_estate": "fix_income"})
-        ports, returns = [], []
-        for st_dt, end_dt in zip(rebal_dt[:-1], rebal_dt[1:]):
-            self.group_model.fit(group_weight[st_dt:end_dt])
-            port = self.group_model.predict(group_weight[st_dt:end_dt])
-            daily_return = (
-                dfs[st_dt:end_dt].xs("Close", axis=1, level=2).pct_change().dropna()
+    def _optimize_group_asset(self, preds: pd.DataFrame, asset_weights: pd.DataFrame):
+        """Optimize via risk budgeting for each asset group
+
+        Args:
+            preds (pd.DataFrame): Dataframe of predicted result. Columns is (assest group, assest name)
+            asset_weights (pd.DataFrame): Dataframe of optimized weight for each individual asset. Index is (rebal_dt, pred_start, pred_end) and columns is (assest group, assest name)
+
+        Returns:
+            group_weights (pd.DataFrame): Dataframe of optimized weight for each group asset. Index is (rebal_dt, pred_start, pred_end) and columns is assest group.
+        """
+        preds = preds.rename(
+            columns={"bond": "fix_income", "real_estate": "fix_income"}
+        )
+        preds_return = preds.pct_change(1).dropna()
+        columns = ["rebal_dt", "pred_start", "pred_end"] + list(
+            preds_return.columns.get_level_values(0).unique()
+        )
+        rows = []
+        for idx, asset_weight in asset_weights.iterrows():
+            weighted_return = (
+                (preds_return * asset_weight)
+                .groupby(axis=1, level=0)
+                .sum()[idx[1] : idx[2]]
             )
-            ports.append(port)
-            returns.append(daily_return.groupby(axis=1, level=0).sum() * port.weights)
-        return ports, pd.concat(returns)
+            # 1. Optimize weight for each asset group using estimated return of each group
+            self.group_model.fit(weighted_return)
+            group_weight = self.group_model.weights_.copy()
+            row = idx + tuple(group_weight)
+            rows.append(row)
+        group_weights = pd.DataFrame(rows, columns=columns)
+        group_weights = group_weights.set_index(["rebal_dt", "pred_start", "pred_end"])
+        return group_weights
