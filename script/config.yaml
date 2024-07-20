@@ -1,7 +1,7 @@
 path_out: "/workdir/notebook/out_lookahead20" #directory to save model
 path_in: "/workdir/notebook/data" #directory of data
 
-preprocesor:
+preprocessor:
   freq: "d"
   remove_weekend: True
 
