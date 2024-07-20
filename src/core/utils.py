@@ -48,8 +48,9 @@ def plot_backtest_result(
     invest: pd.Series,
     groundtruth_risk: pd.Series,
     index_level: pd.Series,
+    figsize: tuple[int] = (10, 7),
 ):
-    fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+    fig, axes = plt.subplots(2, 1, figsize=figsize, sharex=True)
     axes[0].plot(
         result.index,
         result,
@@ -75,8 +76,8 @@ def plot_backtest_result(
     return fig
 
 
-def plot_invest_result(sim_port_value: pd.DataFrame):
-    fig = plt.subplot()
+def plot_invest_result(sim_port_value: pd.DataFrame, figsize: tuple[int] = (10, 7)):
+    fig = plt.figure(figsize=figsize)
     sim_port_uncertainty = sim_port_value["risk"] * 2
     plt.plot(sim_port_value.index, sim_port_value["values"], label="With AI")
     plt.fill_between(

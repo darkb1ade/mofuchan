@@ -198,8 +198,9 @@ class Simulator:
         monthly_return_mean = (monthly_return - 1).mean()
 
         metrics = {
-            "sharpe": sharpe,
-            "volatility": vol,
+            "annualize sharpe ratio": sharpe,
+            "annualize return": return_,
+            "annualize volatility": vol,
             "max_drawdown": max_drawdown,
             "avg_monthly_return": monthly_return_mean,
             "monthly_volatility": monthly_vol,
