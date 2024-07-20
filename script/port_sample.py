@@ -1,5 +1,10 @@
 # %%
-from src.core.utils import get_rebalance_dt, read_input_file
+from src.core.utils import (
+    get_rebalance_dt,
+    read_input_file,
+    plot_backtest_result,
+    plot_invest_result,
+)
 from src.core.config import Config
 from src.core.predictor import Predictor
 from src.core.portfolio import Portfolio
@@ -32,70 +37,27 @@ predictor = Predictor(
 )
 simulator = Simulator(**user_request)
 rebal_dt = get_rebalance_dt(df=data.loc[backtesting_start:], period="m")
-portfolio = Portfolio(
-    predictor=predictor, asset_min_w=0.05, risk_budget=risk_budget, simulator=simulator
-)
+portfolio = Portfolio(predictor=predictor, asset_min_w=0.05, risk_budget=risk_budget)
 # ports, returns = portfolio.backtesting(dfs=data, rebal_dt=rebal_dt)
-# 1. Get predicted close price of all assets
-preds = portfolio.predict(dfs=data, rebal_dt=rebal_dt)
-# TODO: concat groundtruth with prediction to optimize
-asset_weights, group_weights = portfolio.optimize(preds=preds, rebal_dt=rebal_dt)
+# 1. Get predicted close price of all assets & optimize
+asset_weights, group_weights = portfolio.pred_optimize(dfs=data, rebal_dt=rebal_dt)
+# 2. Backtest the result
 invest, groundtruth_risk, result, index_level = simulator.backtesting(
     dfs=data, asset_weights=asset_weights, group_weights=group_weights
 )
+# 3. Get evaluation metrics: Need to summarize to user are sharpe, volatility, max_drawdown
 metrics = simulator.get_metrics(index_level=index_level)
+# 4. Whole investment period simulation
 sim_port_value = simulator.sim_monte_carlo(
     avg_monthly_return=metrics["avg_monthly_return"],
     monthly_volatility=metrics["monthly_volatility"],
 )
-
-
 # %%
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-sns.set_theme()
-fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-axes[0].plot(
-    result.index,
-    result,
-    color="red",
-    label="with AI mofu",
+fig1 = plot_backtest_result(
+    result=result,
+    invest=invest,
+    groundtruth_risk=groundtruth_risk,
+    index_level=index_level,
 )
-axes[0].plot(
-    invest.index,
-    invest,
-    label="without AI",
-    drawstyle="steps-post",
-)
-uncertainty = 3 * (groundtruth_risk * invest).dropna()
-axes[0].fill_between(
-    invest.index,
-    invest - uncertainty,
-    invest + uncertainty,
-    alpha=0.3,
-    color="orange",
-    label="Uncertainty",
-)
-index_level.plot(ax=axes[1], label="AI Mofu return")
 # %%
-sim_port_uncertainty = sim_port_value["risk"] * 2
-plt.plot(sim_port_value.index, sim_port_value["values"], label="With AI")
-plt.fill_between(
-    sim_port_value.index,
-    sim_port_value["values"] - sim_port_uncertainty,
-    sim_port_value["values"] + sim_port_uncertainty,
-    alpha=0.3,
-    color="orange",
-    label="Uncertainty",
-)
-plt.plot(
-    sim_port_value.index,
-    sim_port_value["invest"],
-    label="without AI",
-    drawstyle="steps-post",
-)
-plt.legend()
-
-
-# %%
+fig2 = plot_invest_result(sim_port_value=sim_port_value)

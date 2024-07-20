@@ -17,7 +17,6 @@ class Portfolio:
         predictor: Predictor,
         asset_min_w: float,
         risk_budget: dict,
-        simulator: Simulator,
         group_risk_measure: str = "cvar",
         objective_func: str = "max_return",
         asset_risk_measure: str = "variance",
@@ -33,7 +32,6 @@ class Portfolio:
             risk_budget=risk_budget,
             risk_measure=group_risk_measure,
         )
-        self.simulator = simulator
         self.offset = (
             self.predictor.dataset_spliter.offset  # offset for feature calculation
             + self.predictor.feature.label_lookahead  # offset for label
@@ -178,3 +176,9 @@ class Portfolio:
         group_weights = pd.DataFrame(rows, columns=columns)
         group_weights = group_weights.set_index(["rebal_dt", "pred_start", "pred_end"])
         return group_weights
+
+    def pred_optimize(self, dfs: pd.DataFrame, rebal_dt: list):
+        preds = self.predict(dfs=dfs, rebal_dt=rebal_dt)
+        # TODO: concat groundtruth with prediction to optimize
+        asset_weights, group_weights = self.optimize(preds=preds, rebal_dt=rebal_dt)
+        return asset_weights, group_weights
