@@ -123,16 +123,14 @@ class Portfolio:
 
         for asset_group in tqdm(asset_groups, desc="Optimizing"):
             pred_single_group = preds.xs(asset_group, axis=1)
-            assest_cols = list(pred_single_group.columns.get_level_values(0).unique())
-            columns = ["rebal_dt", "pred_start", "pred_end"] + assest_cols
+            asset_cols = list(pred_single_group.columns.get_level_values(0).unique())
+            columns = ["rebal_dt", "pred_start", "pred_end"] + asset_cols
             rows = []
             for st_idx, end_idx in zip(rebal_dt[:-1], rebal_dt[1:]):
                 pred = pred_single_group[st_idx:end_idx].pct_change().dropna()
-                # pred = pred_single_group[st_idx:end_idx].iloc[
-                #     1:
-                # ]  # prediction for date after rebalance date
+
                 # 1. fit predicted price to get the optimized weights
-                self.asset_model.fit(pred[assest_cols])
+                self.asset_model.fit(pred[asset_cols])
                 # 2. collect weight
                 weight = self.asset_model.weights_.copy()
                 row = (st_idx, pred.index[0], pred.index[-1]) + tuple(weight)
