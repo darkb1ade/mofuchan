@@ -7,7 +7,7 @@ from src.core.simulator import Simulator
 import pandas as pd
 from tqdm import tqdm
 
-OBJECTIVE_FUNCTION = {"max_return": "MAXIMIZE_RETURN"}
+OBJECTIVE_FUNCTION = {"max_return": "MAXIMIZE_RETURN", "max_ratio": "MAXIMIZE_RATIO"}
 RISKMEASURE = {"variance": "VARIANCE", "cvar": "CVAR"}
 
 
@@ -16,7 +16,8 @@ class Portfolio:
         self,
         predictor: Predictor,
         asset_min_w: float,
-        risk_budget: dict,
+        asset_max_w: float,
+        risk_budget: dict = None,
         group_risk_measure: str = "cvar",
         objective_func: str = "max_return",
         asset_risk_measure: str = "variance",
@@ -25,6 +26,7 @@ class Portfolio:
         self._set_asset_model(
             predictor=predictor,
             min_w=asset_min_w,
+            max_w=asset_max_w,
             objective_func=objective_func,
             risk_measure=asset_risk_measure,
         )
@@ -42,6 +44,7 @@ class Portfolio:
         self,
         predictor: Predictor,
         min_w: float,
+        max_w: float,
         objective_func: str = "max_return",
         risk_measure: str = "variance",
     ):
@@ -52,17 +55,19 @@ class Portfolio:
             ),
             risk_measure=getattr(RiskMeasure, RISKMEASURE[risk_measure]),
             min_weights=min_w,
+            max_weights=max_w,
         )
 
     def _set_group_model(self, risk_budget: dict, risk_measure: str):
-        self.risk_budget = risk_budget
         self.group_model = RiskBudgeting(
             risk_measure=getattr(RiskMeasure, RISKMEASURE[risk_measure]),
             risk_budget=risk_budget,
             portfolio_params=dict(name="Risk Budgeting - CVaR"),
         )
 
-    def optimize(self, preds: pd.DataFrame, rebal_dt: list):
+    def optimize(self, preds: pd.DataFrame, rebal_dt: list, risk_budget: dict = None):
+        if risk_budget is not None:
+            self.group_model.risk_budget = risk_budget
         # 1. Optimize mean-variance model for each individual asset
         asset_weights = self._optimize_individual_asset(preds=preds, rebal_dt=rebal_dt)
         # 2. Optimize risk-budgeting model for each asset group
@@ -118,16 +123,16 @@ class Portfolio:
 
         for asset_group in tqdm(asset_groups, desc="Optimizing"):
             pred_single_group = preds.xs(asset_group, axis=1)
-            columns = ["rebal_dt", "pred_start", "pred_end"] + list(
-                pred_single_group.columns.get_level_values(0).unique()
-            )
+            assest_cols = list(pred_single_group.columns.get_level_values(0).unique())
+            columns = ["rebal_dt", "pred_start", "pred_end"] + assest_cols
             rows = []
             for st_idx, end_idx in zip(rebal_dt[:-1], rebal_dt[1:]):
-                pred = pred_single_group[st_idx:end_idx].iloc[
-                    1:
-                ]  # prediction for date after rebalance date
+                pred = pred_single_group[st_idx:end_idx].pct_change().dropna()
+                # pred = pred_single_group[st_idx:end_idx].iloc[
+                #     1:
+                # ]  # prediction for date after rebalance date
                 # 1. fit predicted price to get the optimized weights
-                self.asset_model.fit(pred)
+                self.asset_model.fit(pred[assest_cols])
                 # 2. collect weight
                 weight = self.asset_model.weights_.copy()
                 row = (st_idx, pred.index[0], pred.index[-1]) + tuple(weight)
@@ -158,9 +163,8 @@ class Portfolio:
             columns={"bond": "fix_income", "real_estate": "fix_income"}
         )
         preds_return = preds.pct_change(1).dropna()
-        columns = ["rebal_dt", "pred_start", "pred_end"] + list(
-            preds_return.columns.get_level_values(0).unique()
-        )
+        asset_group_col = list(preds_return.columns.get_level_values(0).unique())
+        columns = ["rebal_dt", "pred_start", "pred_end"] + asset_group_col
         rows = []
         for idx, asset_weight in asset_weights.iterrows():
             weighted_return = (
@@ -169,7 +173,7 @@ class Portfolio:
                 .sum()[idx[1] : idx[2]]
             )
             # 1. Optimize weight for each asset group using estimated return of each group
-            self.group_model.fit(weighted_return)
+            self.group_model.fit(weighted_return[asset_group_col])
             group_weight = self.group_model.weights_.copy()
             row = idx + tuple(group_weight)
             rows.append(row)
@@ -177,8 +181,15 @@ class Portfolio:
         group_weights = group_weights.set_index(["rebal_dt", "pred_start", "pred_end"])
         return group_weights
 
-    def pred_optimize(self, dfs: pd.DataFrame, rebal_dt: list):
+    def pred_optimize(
+        self, dfs: pd.DataFrame, rebal_dt: list, risk_budget: dict = None
+    ):
         preds = self.predict(dfs=dfs, rebal_dt=rebal_dt)
-        # TODO: concat groundtruth with prediction to optimize
-        asset_weights, group_weights = self.optimize(preds=preds, rebal_dt=rebal_dt)
+
+        # for check with future model
+        # preds = dfs.xs("Close", axis = 1, level = 2)
+        # preds = preds.reindex(preds.index).dropna()
+        asset_weights, group_weights = self.optimize(
+            preds=preds, rebal_dt=rebal_dt, risk_budget=risk_budget
+        )
         return asset_weights, group_weights
