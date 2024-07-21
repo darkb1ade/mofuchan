@@ -89,15 +89,18 @@ class MofuInterface:
 
             with gr.Row():
                 with gr.Column(scale=1):
-                    gr.Image(
-                        value=self.logo_path,
-                        width=300,
-                        show_label=False,
-                        show_download_button=False,
-                    )
+                    with gr.Row():
+                        gr.Image(
+                            value=self.logo_path,
+                            width=300,
+                            show_label=False,
+                            show_download_button=False,
+                        )
+                        reset_btn = gr.Button("Reset")
+
                 with gr.Column(scale=10):
                     self.chatbot_box = gr.Chatbot(
-                        height=600,
+                        height=650,
                         show_label=False,
                         value=[[None, MOFU_CHAN_INIT_PHRASE]],
                         elem_classes="chatbot-container",
@@ -122,6 +125,7 @@ class MofuInterface:
                     interactive=True,
                     label="Start amount",
                     info="Initial investment money ($)",
+                    scale=2,
                 )
                 dca_amount_box = gr.Number(
                     value=50,
@@ -130,6 +134,7 @@ class MofuInterface:
                     interactive=True,
                     label="Dollar Cost Average",
                     info="Amount of money you invest per month ($)",
+                    scale=2,
                 )
                 period_amount_box = gr.Number(
                     value=24,
@@ -138,12 +143,12 @@ class MofuInterface:
                     interactive=True,
                     label="Investment time",
                     info="Total investment period (month)",
+                    scale=2,
                 )
                 confirm_button = gr.Button("Confirm", variant="primary")
 
-            reset_btn = gr.Button("Reset")
             mofu_input = gr.Textbox(visible=False, value=self.chatbot)
-            debug_btn = gr.Button("DEBUG")
+            debug_btn = gr.Button("DEBUG", visible=False)
 
             submit_click = submit_btn.click(
                 user,

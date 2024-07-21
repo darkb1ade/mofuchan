@@ -1,8 +1,8 @@
 MOFU_CHAN_HEADER = "Mofu-chan Financial Assistant"
 MOFU_CHAN_DESCRIPTION = """Mofu-chan, the interactive chatbot is here to assist you in creating goal-based investment plan. Here is how she works:<br>
-    1. Analyze user characteristic by answering some question with Mofu-chan.<br>
-    2. Determine optimize investment plan match to user.<br>
-    3. Send plan to <b>Mofu AI</b> to simulate expected result.
+    1. Talk with Mofu-chan to understand user risk tolerance level and create personal investment portfolio.<br>
+    2. Select investment info for simulation.<br>
+    3. Send plan to <b>Mofu AI</b> to simulate investment growth.
     """
 MOFU_CHAN_INIT_PHRASE = (
     "Hi, I'm Mofu-chan, your personal investing planner. What can I help you?"
