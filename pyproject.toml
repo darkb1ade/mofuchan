@@ -20,8 +20,6 @@ openai = "^1.35.13"
 seaborn = "^0.13.2"
 langchain-community = "0.2.7"
 langchain-openai = "0.1.16"
-keybert = "^0.8.5"
-nltk = "^3.8.1"
 
 
 [build-system]
