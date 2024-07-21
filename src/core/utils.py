@@ -51,15 +51,18 @@ def plot_backtest_result(
     figsize: tuple[int] = (10, 7),
 ):
     fig, axes = plt.subplots(2, 1, figsize=figsize, sharex=True)
+    axes[0].title.set_text("Backtesting Result")
+    axes[0].set_ylabel("Investment Growth")
     axes[0].plot(
         result.index,
         result,
         color="red",
         label="with AI mofu",
     )
+
     axes[0].plot(
-        invest.index,
-        invest,
+        invest[invest != 0].index,
+        invest[invest != 0],
         label="without AI",
         drawstyle="steps-post",
     )
@@ -72,6 +75,7 @@ def plot_backtest_result(
         color="orange",
         label="Uncertainty",
     )
+    axes[1].set_ylabel("Accumulative Return (%)")
     index_level.plot(ax=axes[1], label="AI Mofu return")
     return fig
 
@@ -79,7 +83,7 @@ def plot_backtest_result(
 def plot_invest_result(sim_port_value: pd.DataFrame, figsize: tuple[int] = (10, 7)):
     fig = plt.figure(figsize=figsize)
     sim_port_uncertainty = sim_port_value["risk"] * 2
-    plt.plot(sim_port_value.index, sim_port_value["values"], label="With AI")
+    plt.plot(sim_port_value.index, sim_port_value["values"], label="With mofu-AI")
     plt.fill_between(
         sim_port_value.index,
         sim_port_value["values"] - sim_port_uncertainty,
@@ -91,8 +95,11 @@ def plot_invest_result(sim_port_value: pd.DataFrame, figsize: tuple[int] = (10, 
     plt.plot(
         sim_port_value.index,
         sim_port_value["invest"],
-        label="without AI",
+        label="without mofu-AI",
         drawstyle="steps-post",
     )
     plt.legend()
+    plt.title("Investment Simulation")
+    plt.xlabel("Date")
+    plt.ylabel("Investment Growth")
     return fig

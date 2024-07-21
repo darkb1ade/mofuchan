@@ -87,13 +87,31 @@ class RiskAssessBot:
             response = {"destination": "question", "response": response.content}
         self.bot_response = response
         self.bot_response["destination"] = self.bot_response["destination"].lower()
+        if self.bot_response["destination"] == "result":
+            final_response = self.post_process_result(self.bot_response["response"])
+            if final_response is None:
+                # Give one more chance
+                prompt = f"Instruction: Return user risk level again. Give exactly one of the following answers:  Aggressive, Moderate-aggressive, Moderate, Moderate-conservative, Conservative. No extra response!!"
+                self.predict(prompt)
+                final_response = self.post_process_result(self.bot_response["response"])
+                if final_response is None:
+                    final_response = "Can you repeat the last answer again?"
+            self.bot_response["response"] = final_response
 
     def get_history(self):
         print(self.conversation.get_session_history(session_id=self.session_id))
 
+    def post_process_result(self, response_text):
+        response_text = response_text.lower()
+        risk_level_options = sorted(self.risk_level_options, key=len)
+        for risk_level in risk_level_options:
+            if risk_level.lower() in response_text:
+                return risk_level
+        return None
+
     def __call__(self, user_input) -> Dict[str, Any]:
         if user_input is None:
-            prompt = "Start the conversation with the first question. Remember to give at least 4 choices or examples separated into different line"
+            prompt = "Please give me the first question. Only for this time, no extra response in the beginning. Remember to give at least 4 choices or examples separated into different line"
             self.predict(prompt)
             return self.bot_response
 
@@ -105,20 +123,13 @@ class RiskAssessBot:
             prompt = f"User: {user_input}.\n Instruction: Response to what user asked. Follow by asking previous question again."
             self.predict(prompt)
         elif self.bot_response["destination"] == "unrelated":
-            prompt = f"User: {user_input}.\n Instruction: Response politely to what they said, then resume asking last unanswered question."
+            prompt = f"User: {user_input}.\n Inasdastruction: Response politely to what they said, then resume asking last unanswered question."
+            self.predict(prompt)
         elif (
             self.bot_response["destination"] == "result"
         ):  # This only reach if result content is not statisfied.
-            prompt = f"Instruction: Return user risk level based on their answer. Give exactly one of the following answers:  Aggressive, Moderate-aggressive, Moderate, Moderate-conservative, Conservative. No extra response!! "
+            prompt = f"User: {user_input}.\n Instruction: Return user risk level based on their answer. Give exactly one of the following answers:  Aggressive, Moderate-aggressive, Moderate, Moderate-conservative, Conservative. No extra response!! "
             self.predict(prompt)
-
-            if self.bot_response["destination"] == "result":
-                self.bot_response["response"] = self.bot_response["response"].lower()
-                if self.bot_response["response"] not in self.risk_level_options:
-                    # Give one more chance
-                    prompt = f"Instruction: Return user risk level again. Give exactly one of the following answers:  Aggressive, Moderate-aggressive, Moderate, Moderate-conservative, Conservative. No extra response!!"
-                    self.predict(prompt)
-
         else:
             prompt = f"Instruction: Please rephrase your previous result again and return destination value with exactly one of followings: 'Question', 'Explanation', 'Result'"
             self.predict(prompt)
@@ -177,8 +188,9 @@ class GeneralBot:
             and response["response"] not in self.risk_level_options
         ):
             new_response = self(
-                f"Instruction: Specify user risk level with EXACTLY ONE VALUE from of followings: {self.risk_level_options}.") 
-                                # If you really don't have enough info, return destination: general_chat and response with question to ask user for their investment risk level instead DONT ASSUME ANSWER."
+                f"Instruction: Specify user risk level with EXACTLY ONE VALUE from of followings: {self.risk_level_options}."
+            )
+            # If you really don't have enough info, return destination: general_chat and response with question to ask user for their investment risk level instead DONT ASSUME ANSWER."
             # )
             print(f"Unexpected profile: {response}")
             if new_response["response"] not in self.risk_level_options:
@@ -215,7 +227,7 @@ class ProfileAllocateBot:
             history_messages_key="chat_history",
         )
 
-        self.asset_name = ["income_assets", "commodities", "currencies", "equities"]
+        self.asset_name = ["income_assets", "commodity", "currency", "equity"]
 
         self.risk_assess_level = None
         self.profile_value = None
@@ -263,10 +275,10 @@ class ProfileAllocateBot:
 
     def convert_output_to_dict(self, output_string: str):
         output_value = output_string.replace("\n", "").strip().split("-")
-        if len(output_value)!= 5:
+        if len(output_value) != 5:
             print(f"Error: Invalid format for portfolio output: {output_string}")
             return None
-        
+
         output_dict = {}
         for val in output_value[1:]:
             if val.count(":") != 1:
@@ -274,12 +286,13 @@ class ProfileAllocateBot:
                 return None
             asset_key, asset_value = val.split(":")[0], val.split(":")[1]
             try:
-                output_dict[asset_key.strip()] = float(asset_value.replace("%", "").strip()) / 100
+                output_dict[asset_key.strip()] = (
+                    float(asset_value.replace("%", "").strip()) / 100
+                )
             except ValueError:
                 print(f"Error: Invalid format for portfolio output: {output_string}")
                 return None
         return output_dict
-
 
     def __call__(self, user_input):
         response = self.predict(user_input)
@@ -292,7 +305,7 @@ class ProfileAllocateBot:
                     f"Instruction: Confirm the final profile value exactly in the given format: {self.profile_value}"
                 )
                 dict_output = self.convert_output_to_dict(confirm_response["response"])
-            
+
             response["response"] = dict_output
 
         return response
@@ -345,6 +358,9 @@ class MofuChatBot:
                 f"Unknown mode: {mode}. Expected: {(',').join(list(self.converstions.keys()))}"
             )
 
+    def get_history(self):
+        self.current_bot.get_history()
+
     def chat(self, user_input: str):
         output = self.current_bot(user_input)
         if self.mode == "general_chat":
@@ -352,7 +368,11 @@ class MofuChatBot:
                 self.set_status("risk_assessment")
                 output_init = self.current_bot(None)
 
-                return output["response"] + "\n" + output_init["response"]
+                return (
+                    "Let's get started with risk assessment then!"
+                    + "\n"
+                    + output_init["response"]
+                )
             elif output["destination"].lower() == "portfolio":
                 self.set_status("profile_allocation")
                 output_init = self.current_bot.init_conversation(output["response"])
@@ -363,7 +383,7 @@ class MofuChatBot:
             if output["destination"] == "result":
                 self.set_status("profile_allocation")
                 output_init = self.current_bot.init_conversation(output["response"])
-                return output["response"] + "\n" + output_init["response"]
+                return output_init["response"]
             else:
                 return output["response"]
         elif self.mode == "profile_allocation":
