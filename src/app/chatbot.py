@@ -252,12 +252,12 @@ class ProfileAllocateBot:
         print(self.conversation.get_session_history(session_id=self.session_id))
 
     def init_conversation(self, risk_assess_level):
-        self.risk_assess_level = risk_assess_level
+        self.risk_assess_level = risk_assess_level.lower()
         self.profile_value = "\n".join(
             [
                 f"- {name} : {value*100}%"
                 for name, value in zip(
-                    self.asset_name, self.default_allocation[risk_assess_level]
+                    self.asset_name, self.default_allocation[self.risk_assess_level]
                 )
             ]
         )
