@@ -44,7 +44,6 @@ RUN pip install poetry \
     && poetry config virtualenvs.create false
 RUN poetry install --no-interaction --no-ansi -vvv
 
-
 SHELL ["/bin/bash", "-c"]
 
 
@@ -59,4 +58,6 @@ ENV PATH /opt/conda/envs:$PATH
 
 ENV PYTHONPATH $PYTHONPATH:/workdir/src:/workdir
 
+EXPOSE 7860
+ENV GRADIO_SERVER_NAME="0.0.0.0"
 # WORKDIR /workdir

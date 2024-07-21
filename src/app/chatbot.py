@@ -196,7 +196,7 @@ class GeneralBot:
                 "response": router_output.content,
             }
 
-        print(f"Debug: General Chat : {response}")
+        # print(f"Debug: General Chat : {response}")
 
         # Mofu-chan want to move to asset allocation model but not finalize risk level.
         if (
@@ -261,7 +261,7 @@ class ProfileAllocateBot:
                 )
             ]
         )
-        print(f"Default profile: {self.profile_value}")
+        # print(f"Default profile: {self.profile_value}")
         return self(
             "Instruction: Send message recommending given profile and ask for adjustment."
         )
@@ -286,7 +286,7 @@ class ProfileAllocateBot:
                 "destination": "discussion",
                 "response": response.content,
             }
-        print(f"Debug: Profile allocation : {response}")
+        # print(f"Debug: Profile allocation : {response}")
         return response
 
     def convert_output_to_dict(self, output_string: str):

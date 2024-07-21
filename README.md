@@ -15,8 +15,15 @@ This is part of the document for prototype of “HumanAIze Hackathon <FinTech Ed
         -  `poetry add <library>` (Need to install poetry in your local)
     3. Rebuild the docker image
 
+- Add environment variables into `.env` file.
+   - Required: `OPENAI_API_KEY`: You can get one from OpenAI API website.
+
 ## Run docker container
-Please add all the environment variables in `.env` file.
+- Run application. Then app should be accessible at `http://localhost:7860`. (Need a bit of bootup time.)
+    ```
+    make run-apps  # Run application
+    ```
+
 - Run with bash:
     ```
     make run-bash OPTS="<add_parameter>" #create container to run the notebook
@@ -37,11 +44,11 @@ The structure of the source code
 .
 ├── .jupyter                     # configuration file for jupyter notebook
 ├── dockerfiles
-├── notebook                     # jupyter notebook files 
+├── notebook                     # jupyter notebook files
 ├── src                          # main source code
-|    ├── ....  
+|    ├── ....
 ├── tests                        # unittest (if needed)
-├── Makefile  
+├── Makefile
 └── README.md
 ```
 
