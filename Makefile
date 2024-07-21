@@ -3,6 +3,7 @@ PROJECT_ROOT := $(abspath $(MAKEFILE_PATH)/)
 PROJECT_NAME=mofuchan
 IMAGE_TAG=v0.1
 HOST_JUPYTER_PORT=8888
+APP_PORT=7860
 DOCKER_ADDOPTS=\
 	-v $(PROJECT_ROOT)/notebook:/workdir/notebook \
 	-v $(PROJECT_ROOT)/src:/workdir/src \
@@ -16,8 +17,19 @@ conda_lock:
 build:
 	docker build -t $(PROJECT_NAME):$(IMAGE_TAG) -f $(PROJECT_ROOT)/dockerfiles/Dockerfile $(PROJECT_ROOT)
 
+run-apps::
+	@echo "########################################"
+	@echo ""
+	@echo "Access"
+	@echo "http://localhost:$(APP_PORT)"
+	@echo ""
+	@echo "########################################"
+
+run-apps::
+	docker run --rm $(DOCKER_ADDOPTS) -p $(APP_PORT):7860 --name mofuchan-apps $(PROJECT_NAME):$(IMAGE_TAG) python src/app/app.py
+
 run-bash:
-	docker run --rm -it $(DOCKER_ADDOPTS) --name mofuchan-bash $(PROJECT_NAME):$(IMAGE_TAG) bash
+	docker run --rm -it $(DOCKER_ADDOPTS) -p $(APP_PORT):7860 --name mofuchan-bash $(PROJECT_NAME):$(IMAGE_TAG) bash
 
 run-notebook::
 	docker run -d $(DOCKER_ADDOPTS) -p $(HOST_JUPYTER_PORT):8888 --name mofuchan-notebook $(PROJECT_NAME):$(IMAGE_TAG) jupyter lab --no-browser
