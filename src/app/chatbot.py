@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Any, Dict, List
+from nltk.tokenize import RegexpTokenizer
 
 from langchain_openai import ChatOpenAI
 from langchain.prompts import (
@@ -102,12 +103,27 @@ class RiskAssessBot:
         print(self.conversation.get_session_history(session_id=self.session_id))
 
     def post_process_result(self, response_text):
-        response_text = response_text.lower()
-        risk_level_options = sorted(self.risk_level_options, key=len)
-        for risk_level in risk_level_options:
-            if risk_level.lower() in response_text:
-                return risk_level
-        return None
+        tokenizer = RegexpTokenizer(r"\w+")
+        norm_candidates = []
+        for risk_level_option in self.risk_level_options:
+            norm_candidates.extend(tokenizer.tokenize(risk_level_option.lower()))
+        norm_candidates = list(set(norm_candidates))
+        response_text = tokenizer.tokenize(response_text.lower())
+        outs = list(set(response_text).intersection(norm_candidates))
+
+        if len(outs) == 1:
+            return outs[0].capitalize()
+        if len(outs) == 2:
+            return ("-").join(["Moderate"] + [out for out in outs if out != "moderate"])
+        else:  # wrongly detected risk-lvel
+            return None
+
+        # response_text = response_text.lower()
+        # risk_level_options = sorted(self.risk_level_options, key=len)
+        # for risk_level in risk_level_options:
+        #     if risk_level.lower() in response_text:
+        #         return risk_level
+        # return None
 
     def __call__(self, user_input) -> Dict[str, Any]:
         if user_input is None:
